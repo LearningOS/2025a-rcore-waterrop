@@ -27,8 +27,18 @@ mod process;
 use fs::*;
 use process::*;
 
+// use core::sync::atomic::{AtomicUsize, Ordering};
+use lazy_static::lazy_static;
+use spin::Mutex;
+
+// 为每个系统调用ID维护一个计数器
+lazy_static!{
+    static ref SYSCALL_COUNTERS: Mutex<[usize;512]> = Mutex::new([0;512]);
+}
+
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    record_syscall_count(syscall_id);
     match syscall_id {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),
@@ -36,5 +46,13 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_GET_TIME => sys_get_time(args[0] as *mut TimeVal, args[1]),
         SYSCALL_TRACE => sys_trace(args[0], args[1], args[2]),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
+    }
+}
+
+/// 记录系统调用次数
+fn record_syscall_count(syscall_id: usize){
+    if syscall_id < 512{
+        let mut counters = SYSCALL_COUNTERS.lock();
+        counters[syscall_id] += 1;
     }
 }
