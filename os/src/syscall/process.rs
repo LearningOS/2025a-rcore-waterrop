@@ -1,9 +1,8 @@
 //! Process management syscalls
 use crate::{
-    task::{exit_current_and_run_next, suspend_current_and_run_next},
+    task::{exit_current_and_run_next, suspend_current_and_run_next, get_syscall_count},
     timer::get_time_us,
 };
-use crate::syscall::SYSCALL_COUNTERS;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -63,8 +62,7 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
             }
             2 => {
                 if _id < 512 {
-                    let counters = SYSCALL_COUNTERS.lock();
-                    counters[_id] as isize
+                    get_syscall_count(_id) as isize
                 }
                 else {-1}
             }
