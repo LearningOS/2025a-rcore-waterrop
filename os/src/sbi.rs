@@ -2,9 +2,9 @@
 
 use core::arch::asm;
 
-const SBI_SET_TIMER: usize = 0;
+const SBI_SET_TIMER: usize = 0x54494D45;
 const SBI_CONSOLE_PUTCHAR: usize = 1;
-const SBI_SHUTDOWN: usize = 8;
+const SBI_SHUTDOWN: usize = 0x53525354;
 
 /// general sbi call
 #[inline(always)]
