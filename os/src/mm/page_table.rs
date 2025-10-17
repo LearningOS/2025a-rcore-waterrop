@@ -89,6 +89,7 @@ impl PageTable {
         }
     }
     /// Temporarily used to get arguments from user space.
+    /// 从一个已经存在的地址空间（由 satp 表示）中快速构造一个内核可用的 PageTable 对象，以便在内核态中进行用户空间的虚拟地址翻译。
     pub fn from_token(satp: usize) -> Self {
         Self {
             root_ppn: PhysPageNum::from(satp & ((1usize << 44) - 1)),
@@ -158,15 +159,20 @@ impl PageTable {
 }
 
 /// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
+/*
+ * token：stap寄存器的内容，保存了进程页表根结点的物理页号
+ * ptr：用户虚拟地址起点
+ * len：长度
+ */
 pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
     let page_table = PageTable::from_token(token);
     let mut start = ptr as usize;
     let end = start + len;
     let mut v = Vec::new();
     while start < end {
-        let start_va = VirtAddr::from(start);
-        let mut vpn = start_va.floor();
-        let ppn = page_table.translate(vpn).unwrap().ppn();
+        let start_va = VirtAddr::from(start);       // 把start转为虚拟地址类型
+        let mut vpn = start_va.floor();          // 获取该虚拟地址所属的虚拟页号，是向下取整
+        let ppn = page_table.translate(vpn).unwrap().ppn();     // 获得该vpn对应的ppn
         vpn.step();
         let mut end_va: VirtAddr = vpn.into();
         end_va = end_va.min(VirtAddr::from(end));
@@ -178,4 +184,15 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+/// 返回T类型的可变引用
+pub fn translated_refmut<T>(token: usize, ptr: *const u8) -> &'static mut T {
+    let page_table = PageTable::from_token(token);
+    let start = ptr as usize;
+    let start_va = VirtAddr::from(start);
+    let vpn = start_va.floor();
+    let pte = page_table.translate(vpn).unwrap();
+    let ppn = pte.ppn();
+    ppn.get_mut::<T>()
 }

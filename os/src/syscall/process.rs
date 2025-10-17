@@ -1,5 +1,5 @@
 //! Process management syscalls
-use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next};
+use crate::{mm::{translated_refmut}, task::{change_program_brk, current_user_token, exit_current_and_run_next, suspend_current_and_run_next}, timer::{get_time, get_time_us}};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -26,8 +26,13 @@ pub fn sys_yield() -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!("kernel: sys_get_time");
-    -1
+    let current_time_us = get_time_us();
+    let current_time_s = get_time();
+    let user_token = current_user_token();
+    let ts = translated_refmut::<TimeVal>(user_token, _ts as *const u8);
+    (*ts).usec = current_time_us;
+    (*ts).sec = current_time_s;
+    0
 }
 
 /// TODO: Finish sys_trace to pass testcases

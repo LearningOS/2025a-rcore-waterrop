@@ -1,0 +1,3 @@
+重写sys_get_time()
+ 传进来的_ts是调用sys_get_time()的任务的TimeVal在用户地址空间中的地址，关键是如何取出这个地址下的TimeVal
+ 参考translated_byte_buffer的写法
