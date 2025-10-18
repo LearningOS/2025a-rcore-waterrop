@@ -37,11 +37,39 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
+/* 
+ * 功能:追踪当前任务系统调用的历史信息。
+ * 返回值:
+ *      _trace_request为0, 返回id地址处的值;
+ *      _trace_request为1, 返回0;
+ *      _trace_request为2, 返回任务编号为id的系统调用次数
+ * syscall ID: 410
+ */
+/* 
 pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
     trace!("kernel: sys_trace");
-    -1
+    unsafe {
+        match _trace_request{
+            0 => {
+                let id_ptr = _id as *const  u8;
+                *id_ptr as isize
+            }
+            1 => {
+                let id_ptr = _id as *mut u8;
+                *id_ptr = _data as u8;
+                0
+            }
+            2 => {
+                if _id < 512 {
+                    get_syscall_count(_id) as isize
+                }
+                else {-1}
+            }
+            _ => -1,
+        }
+    }
 }
-
+*/
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
