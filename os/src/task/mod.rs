@@ -14,6 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
@@ -46,6 +47,8 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    /// 记录每个任务的系统调用次数
+    syscall_counters: [[usize;MAX_SYSCALL_NUM];MAX_APP_NUM],
 }
 
 lazy_static! {
@@ -64,6 +67,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    syscall_counters: [[0;MAX_SYSCALL_NUM];MAX_APP_NUM]
                 })
             },
         }
@@ -153,6 +157,18 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    /// 返回当前任务调用id的次数
+    fn get_syscall_count(&self, syscall_id: usize) -> usize{
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.syscall_counters[current][syscall_id]
+    }
+    /// 记录系统调用次数
+    fn record_syscall_count(&self, syscall_id: usize){
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.syscall_counters[current][syscall_id] += 1;
+    }
 }
 
 /// Run the first task in task list.
@@ -201,4 +217,14 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// 返回当前任务调用id的次数
+pub fn get_syscall_count(syscall_id: usize) -> usize{
+    TASK_MANAGER.get_syscall_count(syscall_id)
+}
+
+/// 记录系统调用次数
+pub fn record_syscall_count(syscall_id: usize){
+    TASK_MANAGER.record_syscall_count(syscall_id);
 }
