@@ -14,7 +14,7 @@ pub const PAGE_SIZE: usize = 0x1000;
 /// page size bits: 12
 pub const PAGE_SIZE_BITS: usize = 0xc;
 /// the max number of apps
-pub const MAX_APP_NUM: usize = 16;
+pub const MAX_APP_NUM: usize = 32;
 /// the max number of syscall
 pub const MAX_SYSCALL_NUM: usize = 500;
 /// the virtual addr of trapoline

@@ -1,5 +1,7 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
+use crate::mm::PhysAddr;
+
 use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -187,12 +189,41 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
 }
 
 /// 返回T类型的可变引用
-pub fn translated_refmut<T>(token: usize, ptr: *const u8) -> &'static mut T {
+pub fn translated_refmut<T>(token: usize, ptr: *const T) -> Option<*mut T> {
     let page_table = PageTable::from_token(token);
     let start = ptr as usize;
     let start_va = VirtAddr::from(start);
     let vpn = start_va.floor();
-    let pte = page_table.translate(vpn).unwrap();
-    let ppn = pte.ppn();
-    ppn.get_mut::<T>()
+    let ppn = page_table.translate(vpn).unwrap().ppn();
+    let offset = start_va.page_offset();
+    let phys_addr = PhysAddr::from(ppn);
+    let phys_ptr = (phys_addr.0 + offset) as *mut T;
+    Some(phys_ptr)
+}
+/// 检查 addr 在 token 指定的地址空间内是否存在映射并具有需要的权限（read/write）
+/// token：表示页表
+/// addr：表示要检查的虚拟地址
+/// write：若为 true 则检查写权限，否则只检查读权限
+pub fn validate_user_addr(token: usize, addr: usize, write: bool) -> bool {
+    // 空指针 / 显然越界检查
+    if addr == 0 { return false; }
+    // if addr >= USER_TOP { return false; } // 快速拒绝内核地址范围
+
+    let page_table = PageTable::from_token(token);
+    let va = VirtAddr::from(addr);
+    let vpn = va.floor();
+
+    // 翻译出 PTE
+    if let Some(pte) = page_table.translate(vpn) {
+        // pte 必须有效
+        if !pte.is_valid() { return false; }
+        // 必须是用户页（U bit）
+        // if !pte.is_user() { return false; }
+        // 写入时还需要可写标志
+        if write && !pte.writable() { return false; }
+        // 通过检查
+        true
+    } else {
+        false
+    }
 }

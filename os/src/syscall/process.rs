@@ -1,5 +1,5 @@
 //! Process management syscalls
-use crate::{mm::{translated_refmut}, task::{change_program_brk, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, get_syscall_count}, timer::{get_time, get_time_us}};
+use crate::{mm::{translated_refmut, validate_user_addr}, task::{change_program_brk, current_user_token, exit_current_and_run_next, get_syscall_count, suspend_current_and_run_next}, timer::{get_time, get_time_us}};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -26,13 +26,21 @@ pub fn sys_yield() -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+    trace!("kernel: sys_get_time");
     let current_time_us = get_time_us();
     let current_time_s = get_time();
-    let user_token = current_user_token();
-    let ts = translated_refmut::<TimeVal>(user_token, _ts as *const u8);
-    (*ts).usec = current_time_us;
-    (*ts).sec = current_time_s;
-    0
+    let token = current_user_token();
+    if let Some(ts) = translated_refmut::<TimeVal>(token, _ts as *const TimeVal) {
+        unsafe {
+            (*ts).usec = current_time_us;
+            (*ts).sec = current_time_s;
+            0
+        }
+    }
+    else {
+        -1
+    }
+    
 }
 
 /// TODO: Finish sys_trace to pass testcases
@@ -46,20 +54,46 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
  * syscall ID: 410
  */
 pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
+    trace!("kernel: sys_trace");
     unsafe {
+        let user_token = current_user_token();
         match _trace_request{
             0 => {
-                let id_ptr = _id as *const  u8;
-                *id_ptr as isize
+                print!("_trace_request0\n");
+                let flag = validate_user_addr(user_token, _id, false);
+                if flag {
+                    if let Some(phys_ptr) = translated_refmut::<u8>(user_token, _id as *const  u8) {
+                        (*phys_ptr) as isize
+                    }
+                    else {
+                        -1 as isize
+                    }
+                }
+                else { -1 as isize }
+                
             }
             1 => {
-                let id_ptr = _id as *mut u8;
-                *id_ptr = _data as u8;
-                0
+                print!("_trace_request1\n");
+                let flag = validate_user_addr(user_token, _id, true);
+                if flag {
+                    if let Some(phys_ptr) = translated_refmut::<u8>(user_token, _id as *const u8){
+                        (*phys_ptr) = _data as u8;
+                        0
+                    }
+                    else {
+                        -1 as isize
+                    }
+                }
+                else {
+                    -1 as isize
+                }
             }
             2 => {
+                print!("_trace_request2\n");
                 if _id < 512 {
-                    get_syscall_count(_id) as isize
+                    let count = get_syscall_count(_id) as isize;
+                    print!("{}count:{}\n", _id, count);
+                    count
                 }
                 else {-1}
             }
