@@ -1,5 +1,6 @@
 //! Process management syscalls
-use crate::{mm::{translated_refmut, validate_user_addr}, task::{change_program_brk, current_user_token, exit_current_and_run_next, get_syscall_count, suspend_current_and_run_next}, timer::{get_time, get_time_us}};
+
+use crate::{mm::{translated_refmut, validate_user_addr}, task::{change_program_brk, current_user_token, exit_current_and_run_next, get_syscall_count, suspend_current_and_run_next, insert_mmap}, timer::{get_time, get_time_us}};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -103,9 +104,14 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+/// 申请长度为 len 字节的物理内存（不要求实际物理内存位置，可以随便找一块），将其映射到 start 开始的虚存，内存页属性为 prot
+/// start 需要映射的虚存起始地址，要求按页对齐
+/// len 映射字节长度，可以为 0
+/// len 映射字节长度，可以为 0
+/// 返回值：执行成功则返回 0，错误返回 -1
+pub fn sys_mmap(_start: usize, _len: usize, _prot: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+    insert_mmap(_start, _len, _prot)
 }
 
 // YOUR JOB: Implement munmap.

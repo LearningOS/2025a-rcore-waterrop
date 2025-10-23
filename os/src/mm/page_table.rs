@@ -1,11 +1,14 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use crate::mm::PhysAddr;
+//use crate::mm::memory_set::{MapArea, MapType, MapPermission};
+//use crate::mm::frame_allocator::frame_dealloc;
+use crate::{mm::PhysAddr};
 
 use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
+//use alloc::collections::BTreeMap;
 
 bitflags! {
     /// page table entry flags

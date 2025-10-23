@@ -14,8 +14,9 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM, PAGE_SIZE};
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr, VPNRange};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -169,6 +170,35 @@ impl TaskManager {
         let current = inner.current_task;
         inner.syscall_counters[current][syscall_id] += 1;
     }
+    /// 映射
+    fn mmap(&self, start: usize, len: usize, prot: usize) -> isize{
+        // start是否按页对齐
+        if (start % PAGE_SIZE) != 0 { return -1 };
+        // prot其余位为0
+        if (prot & !0x7) != 0 { return -1 };
+        // 无意义内存
+        if (prot & 0x7) == 0 { return -1 };
+        // 获取标志位
+        let mut permission = MapPermission::U;
+        if prot & 0x1 != 0 { permission |= MapPermission::R };
+        if prot & 0x2 != 0 { permission |= MapPermission::W };
+        if prot & 0x4 != 0 { permission |= MapPermission::X };
+
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let memortset = &mut inner.tasks[current].memory_set;
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        let vpn_range = VPNRange::new(start_vpn, end_vpn);
+        // 保证[start, start + len) 中不存在已经被映射的页
+        for vpn in vpn_range {
+            if memortset.translate(vpn).is_some() { return -1 }
+        }
+        memortset.insert_framed_area(start_va, end_va, permission);
+        0
+    }
 }
 
 /// Run the first task in task list.
@@ -227,4 +257,8 @@ pub fn get_syscall_count(syscall_id: usize) -> usize{
 /// 记录系统调用次数
 pub fn record_syscall_count(syscall_id: usize){
     TASK_MANAGER.record_syscall_count(syscall_id);
+}
+/// 映射接口
+pub fn insert_mmap(start: usize, len: usize, permission: usize) -> isize{
+    TASK_MANAGER.mmap(start, len, permission)
 }

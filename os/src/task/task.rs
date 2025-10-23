@@ -96,6 +96,13 @@ impl TaskControlBlock {
             None
         }
     }
+    /// 插入映射
+    pub fn insert_task_framed(&mut self, start: usize, end: usize, perm: u8){
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(end);
+        let permission = MapPermission::from_bits(perm).unwrap();
+        self.memory_set.insert_framed_area(start_va, end_va, permission);
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]
