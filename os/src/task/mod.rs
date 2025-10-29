@@ -183,7 +183,6 @@ impl TaskManager {
         if prot & 0x1 != 0 { permission |= MapPermission::R };
         if prot & 0x2 != 0 { permission |= MapPermission::W };
         if prot & 0x4 != 0 { permission |= MapPermission::X };
-
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         let memortset = &mut inner.tasks[current].memory_set;
@@ -193,10 +192,37 @@ impl TaskManager {
         let end_vpn = end_va.ceil();
         let vpn_range = VPNRange::new(start_vpn, end_vpn);
         // 保证[start, start + len) 中不存在已经被映射的页
+        //print!("start_vpn: {}  end_vpn: {}\n", start_vpn.0, end_vpn.0);
         for vpn in vpn_range {
-            if memortset.translate(vpn).is_some() { return -1 }
+            //print!("vpn: {}\n", vpn.0);
+            //assert!(!memortset.translate(vpn).is_some(), "{} is mapped", vpn.0);
+            
+            if memortset.translate(vpn).is_some() {
+                println!("VPN {} already mapped!", vpn.0);
+                return -1 
+            }
         }
         memortset.insert_framed_area(start_va, end_va, permission);
+        0
+    }
+    // 取消映射
+    fn munmap(&self, start: usize, len: usize) -> isize{
+        // start是否按页对齐
+        if (start % PAGE_SIZE) != 0 { return -1 };
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let memortset = &mut inner.tasks[current].memory_set;
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        let vpn_range = VPNRange::new(start_vpn, end_vpn);
+        // 保证[start, start + len) 中全是已经被映射的页
+        for vpn in vpn_range {
+            if !memortset.translate(vpn).is_some() { return -1 }
+        }
+        // 删除mapareas
+        memortset.munamp(start_va, end_va, MapPermission::U);
         0
     }
 }
@@ -261,4 +287,8 @@ pub fn record_syscall_count(syscall_id: usize){
 /// 映射接口
 pub fn insert_mmap(start: usize, len: usize, permission: usize) -> isize{
     TASK_MANAGER.mmap(start, len, permission)
+}
+/// 取消映射接口
+pub fn delete_mmap(start: usize, len: usize) -> isize{
+    TASK_MANAGER.munmap(start, len)
 }

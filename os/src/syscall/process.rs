@@ -1,6 +1,6 @@
 //! Process management syscalls
 
-use crate::{mm::{translated_refmut, validate_user_addr}, task::{change_program_brk, current_user_token, exit_current_and_run_next, get_syscall_count, suspend_current_and_run_next, insert_mmap}, timer::{get_time, get_time_us}};
+use crate::{mm::{translated_refmut, validate_user_addr}, task::{change_program_brk, current_user_token, delete_mmap, exit_current_and_run_next, get_syscall_count, insert_mmap, suspend_current_and_run_next}, timer::{get_time, get_time_us}};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -71,7 +71,6 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
                     }
                 }
                 else { -1 as isize }
-                
             }
             1 => {
                 print!("_trace_request1\n");
@@ -110,14 +109,14 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
 /// len 映射字节长度，可以为 0
 /// 返回值：执行成功则返回 0，错误返回 -1
 pub fn sys_mmap(_start: usize, _len: usize, _prot: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+    trace!("kernel: sys_mmap");
     insert_mmap(_start, _len, _prot)
 }
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+    trace!("kernel: sys_munmap");
+    delete_mmap(_start, _len)
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

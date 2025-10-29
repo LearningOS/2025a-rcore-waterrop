@@ -3,7 +3,7 @@
 //use crate::mm::memory_set::{MapArea, MapType, MapPermission};
 //use crate::mm::frame_allocator::frame_dealloc;
 use crate::{mm::PhysAddr};
-
+use crate::config::MEMORY_END;
 use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -210,7 +210,7 @@ pub fn translated_refmut<T>(token: usize, ptr: *const T) -> Option<*mut T> {
 pub fn validate_user_addr(token: usize, addr: usize, write: bool) -> bool {
     // 空指针 / 显然越界检查
     if addr == 0 { return false; }
-    // if addr >= USER_TOP { return false; } // 快速拒绝内核地址范围
+    if addr >= MEMORY_END { return false; } // 快速拒绝内核地址范围
 
     let page_table = PageTable::from_token(token);
     let va = VirtAddr::from(addr);

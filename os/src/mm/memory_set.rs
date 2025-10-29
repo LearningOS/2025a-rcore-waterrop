@@ -63,6 +63,22 @@ impl MemorySet {
             None,
         );
     }
+    /// 取消映射
+    pub fn munamp(&mut self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission){
+        let mut maparea = MapArea::new(start_va, end_va, MapType::Framed, permission);
+        maparea.unmap(&mut self.page_table);
+        let pos = match self.areas.iter().position(|area|
+            area.vpn_range.get_start() == maparea.vpn_range.get_start() &&
+            area.vpn_range.get_end() == maparea.vpn_range.get_end()
+        ) {
+            Some(p) => p,
+            None => {
+                assert!(false);
+                0
+            },
+        };
+        self.areas.remove(pos);
+    }
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
@@ -368,6 +384,8 @@ pub enum MapType {
 bitflags! {
     /// map permission corresponding to that in pte: `R W X U`
     pub struct MapPermission: u8 {
+        /// valid
+        const V = 1 << 0;
         ///Readable
         const R = 1 << 1;
         ///Writable
