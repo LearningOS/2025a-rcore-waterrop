@@ -38,26 +38,35 @@ impl TaskControlBlock {
 
 pub struct TaskControlBlockInner {
     /// The physical page number of the frame where the trap context is placed
+    /// 指出了应用地址空间中的 Trap 上下文被放在的物理页帧的物理页号。
     pub trap_cx_ppn: PhysPageNum,
 
     /// Application data can only appear in areas
     /// where the application address space is lower than base_size
+    /// 应用数据仅有可能出现在应用地址空间低于 base_size 字节的区域中。
+    /// 借助它我们可以清楚的知道应用有多少数据驻留在内存中。
     pub base_size: usize,
 
     /// Save task context
+    /// 保存任务上下文，用于任务切换。
     pub task_cx: TaskContext,
 
     /// Maintain the execution status of the current process
+    /// 维护当前进程的执行状态。
     pub task_status: TaskStatus,
 
     /// Application address space
+    /// 表示应用地址空间。
     pub memory_set: MemorySet,
 
     /// Parent process of the current process.
     /// Weak will not affect the reference count of the parent
+    /// 指向当前进程的父进程（如果存在的话）。
+    /// 使用 Weak 而非 Arc 来包裹另一个任务控制块，因此这个智能指针将不会影响父进程的引用计数。
     pub parent: Option<Weak<TaskControlBlock>>,
 
     /// A vector containing TCBs of all child processes of the current process
+    /// 将当前进程的所有子进程的任务控制块以 Arc 智能指针的形式保存在一个向量中，这样才能够更方便的找到它们。
     pub children: Vec<Arc<TaskControlBlock>>,
 
     /// It is set when active exit or execution error occurs
