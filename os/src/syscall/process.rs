@@ -1,6 +1,8 @@
 //! Process management syscalls
 
-use crate::{mm::{translated_refmut, validate_user_addr}, task::{change_program_brk, current_user_token, delete_mmap, exit_current_and_run_next, get_syscall_count, insert_mmap, suspend_current_and_run_next}, timer::{get_time, get_time_us}};
+use core::mem::size_of;
+
+use crate::{mm::{translated_byte_buffer, translated_refmut, validate_user_addr}, task::{change_program_brk, current_user_token, delete_mmap, exit_current_and_run_next, get_syscall_count, insert_mmap, suspend_current_and_run_next}, timer::{get_time_us}};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -29,20 +31,34 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    let current_time_us = get_time_us();
-    let current_time_s = get_time();
-    let token = current_user_token();
-    if let Some(ts) = translated_refmut::<TimeVal>(token, _ts as *const TimeVal) {
-        unsafe {
-            (*ts).usec = current_time_us;
-            (*ts).sec = current_time_s;
-            0
+    let total_us = get_time_us();
+    let time_val = TimeVal {
+        sec: (total_us / 1_000_000) as usize,
+        usec: (total_us % 1_000_000) as usize,
+    };
+    // 直接使用 translated_byte_buffer 并写入数据
+    let mut buffers = translated_byte_buffer(
+        current_user_token(),
+        _ts as *const u8,
+        size_of::<TimeVal>()
+    );
+    let src_bytes = unsafe {
+        core::slice::from_raw_parts(
+            &time_val as *const TimeVal as *const u8,
+            size_of::<TimeVal>()
+        )
+    };
+    // 直接复制数据
+    let mut offset = 0;
+    for buffer in &mut buffers {
+        let copy_len = buffer.len().min(src_bytes.len() - offset);
+        buffer[..copy_len].copy_from_slice(&src_bytes[offset..offset + copy_len]);
+        offset += copy_len;
+        if offset >= src_bytes.len() {
+            break;
         }
     }
-    else {
-        -1
-    }
-    
+    if offset == size_of::<TimeVal>() { 0 } else { -1 }
 }
 
 /// TODO: Finish sys_trace to pass testcases
@@ -64,7 +80,7 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
                 //print!("_trace_request0\n");
                 let flag = validate_user_addr(user_token, _id, false);
                 if flag {
-                    if let Some(phys_ptr) = translated_refmut::<u8>(user_token, _id as *const  u8) {
+                    if let Some(phys_ptr) = translated_refmut::<u8>(user_token, _id as *mut  u8) {
                         (*phys_ptr) as isize
                     }
                     else {
@@ -77,7 +93,7 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
                 //print!("_trace_request1\n");
                 let flag = validate_user_addr(user_token, _id, true);
                 if flag {
-                    if let Some(phys_ptr) = translated_refmut::<u8>(user_token, _id as *const u8){
+                    if let Some(phys_ptr) = translated_refmut::<u8>(user_token, _id as *mut u8){
                         (*phys_ptr) = _data as u8;
                         0
                     }

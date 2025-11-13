@@ -194,7 +194,7 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
 }
 
 /// 返回T类型的可变引用
-pub fn translated_refmut<T>(token: usize, ptr: *const T) -> Option<*mut T> {
+pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> Option<*mut T> {
     let page_table = PageTable::from_token(token);
     let start = ptr as usize;
     let start_va = VirtAddr::from(start);
