@@ -19,6 +19,7 @@ pub fn sys_exit(_exit_code: i32) -> ! {
 /// current task gives up resources for other tasks
 pub fn sys_yield() -> isize {
     trace!("kernel: sys_yield");
+    // println!("kernel: sys_yield");
     suspend_current_and_run_next();
     0
 }
@@ -60,7 +61,7 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
         let user_token = current_user_token();
         match _trace_request{
             0 => {
-                print!("_trace_request0\n");
+                //print!("_trace_request0\n");
                 let flag = validate_user_addr(user_token, _id, false);
                 if flag {
                     if let Some(phys_ptr) = translated_refmut::<u8>(user_token, _id as *const  u8) {
@@ -73,7 +74,7 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
                 else { -1 as isize }
             }
             1 => {
-                print!("_trace_request1\n");
+                //print!("_trace_request1\n");
                 let flag = validate_user_addr(user_token, _id, true);
                 if flag {
                     if let Some(phys_ptr) = translated_refmut::<u8>(user_token, _id as *const u8){
@@ -89,10 +90,10 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
                 }
             }
             2 => {
-                print!("_trace_request2\n");
+                //print!("_trace_request2\n");
                 if _id < 512 {
                     let count = get_syscall_count(_id) as isize;
-                    print!("{}count:{}\n", _id, count);
+                    print!("{} count:{}\n", _id, count);
                     count
                 }
                 else {-1}

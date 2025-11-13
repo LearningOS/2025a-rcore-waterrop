@@ -16,7 +16,7 @@ mod task;
 
 use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM, PAGE_SIZE};
 use crate::loader::{get_app_data, get_num_app};
-use crate::mm::{MapPermission, VirtAddr, VPNRange};
+use crate::mm::{MapPermission, VPNRange, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -172,6 +172,7 @@ impl TaskManager {
     }
     /// 映射
     fn mmap(&self, start: usize, len: usize, prot: usize) -> isize{
+        if len == 0 { return -1 };
         // start是否按页对齐
         if (start % PAGE_SIZE) != 0 { return -1 };
         // prot其余位为0
@@ -179,27 +180,33 @@ impl TaskManager {
         // 无意义内存
         if (prot & 0x7) == 0 { return -1 };
         // 获取标志位
-        let mut permission = MapPermission::U;
+        let mut permission = MapPermission::V | MapPermission::U;
         if prot & 0x1 != 0 { permission |= MapPermission::R };
         if prot & 0x2 != 0 { permission |= MapPermission::W };
         if prot & 0x4 != 0 { permission |= MapPermission::X };
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         let memortset = &mut inner.tasks[current].memory_set;
+        // 获取要分配的页面的数量
+        let mut page_cnt = len / PAGE_SIZE;
+        if len % PAGE_SIZE != 0 { page_cnt = page_cnt + 1;}
         let start_va = VirtAddr::from(start);
-        let end_va = VirtAddr::from(start + len);
         let start_vpn = start_va.floor();
-        let end_vpn = end_va.ceil();
+        let end_vpn = VirtPageNum::from(start_vpn.0 + page_cnt);
+        let end_va = VirtAddr::from(end_vpn);
+        // let end_va = VirtAddr::from(start + len - 1);
+        // let end_vpn = end_va.ceil();
         let vpn_range = VPNRange::new(start_vpn, end_vpn);
         // 保证[start, start + len) 中不存在已经被映射的页
         //print!("start_vpn: {}  end_vpn: {}\n", start_vpn.0, end_vpn.0);
         for vpn in vpn_range {
             //print!("vpn: {}\n", vpn.0);
             //assert!(!memortset.translate(vpn).is_some(), "{} is mapped", vpn.0);
-            
-            if memortset.translate(vpn).is_some() {
-                println!("VPN {} already mapped!", vpn.0);
-                return -1 
+            if let Some(pte) = memortset.translate(vpn) {
+                if pte.is_valid() {
+                    println!("VPN {} already mapped!", vpn.0);
+                    return -1;
+                }
             }
         }
         memortset.insert_framed_area(start_va, end_va, permission);
@@ -212,14 +219,22 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         let memortset = &mut inner.tasks[current].memory_set;
+        let mut page_cnt = len / PAGE_SIZE;
+        if len % PAGE_SIZE != 0 { page_cnt = page_cnt + 1;}
         let start_va = VirtAddr::from(start);
-        let end_va = VirtAddr::from(start + len);
         let start_vpn = start_va.floor();
-        let end_vpn = end_va.ceil();
+        let end_vpn = VirtPageNum::from(start_vpn.0 + page_cnt);
+        let end_va= VirtAddr::from(end_vpn);
+        // let end_va = VirtAddr::from(start + len - 1);
+        // let end_vpn = end_va.ceil();
         let vpn_range = VPNRange::new(start_vpn, end_vpn);
         // 保证[start, start + len) 中全是已经被映射的页
         for vpn in vpn_range {
-            if !memortset.translate(vpn).is_some() { return -1 }
+            if let Some(pte) = memortset.translate(vpn) {
+                if !pte.is_valid() {
+                    return -1;
+                }
+            }
         }
         // 删除mapareas
         memortset.munamp(start_va, end_va, MapPermission::U);

@@ -315,6 +315,7 @@ impl MapArea {
                 self.data_frames.insert(vpn, frame);
             }
         }
+        // println!("vpn: {}, flags: {:?} (bits = {:b})", vpn.0, self.map_perm, self.map_perm.bits);
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         page_table.map(vpn, ppn, pte_flags);
     }
@@ -328,6 +329,7 @@ impl MapArea {
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
+            // println!("memory_set map VPN {} mapped!", vpn.0);
         }
     }
     #[allow(unused)]
