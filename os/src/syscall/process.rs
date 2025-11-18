@@ -1,13 +1,13 @@
 //! Process management syscalls
 use alloc::sync::Arc;
-
+use core::mem::size_of;
 use crate::{
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
+    mm::{translated_byte_buffer, translated_refmut, translated_str},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
-    },
+    }, timer::get_time_us,
 };
 
 #[repr(C)]
@@ -110,7 +110,32 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let total_us = get_time_us();
+    let time_val = TimeVal {
+        sec: (total_us / 1_000_000) as usize,
+        usec: (total_us % 1_000_000) as usize
+    };
+    // 获取用户内存空间
+     let mut buffers = translated_byte_buffer(      // 用户空间指针转换为内核可访问的缓冲区
+        current_user_token(), 
+        _ts as *const u8, 
+        size_of::<TimeVal>()
+    );
+    let src_bytes = unsafe {        // 将 TimeVal 结构体转换为字节切片
+        core::slice::from_raw_parts(
+        &time_val as *const TimeVal as *const u8,
+        size_of::<TimeVal>()
+        )
+    };
+    // 分块复制到用户空间
+    let mut offset = 0;
+    for buffer in &mut buffers {
+        let copy_len = buffer.len().min(src_bytes.len() - offset);
+        buffer[..copy_len].copy_from_slice(&src_bytes[offset..offset + copy_len]);
+        offset += copy_len;
+        if offset >= src_bytes.len() { break; }
+    }
+    if offset == size_of::<TimeVal>() { 0 } else { -1 }
 }
 
 /// YOUR JOB: Implement mmap.
