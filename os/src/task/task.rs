@@ -245,6 +245,11 @@ impl TaskControlBlock {
             None
         }
     }
+
+    /// 进行内存映射
+    pub fn mmap(&self, _start: usize, _len: usize, _port: usize) {
+        
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]
