@@ -1,8 +1,8 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::config::{PAGE_SIZE, TRAP_CONTEXT_BASE};
+use crate::mm::{KERNEL_SPACE, MapPermission, MemorySet, PhysPageNum, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
@@ -247,8 +247,33 @@ impl TaskControlBlock {
     }
 
     /// 进行内存映射
-    pub fn mmap(&self, _start: usize, _len: usize, _port: usize) {
-        
+    pub fn mmap(&self, start: usize, len: usize, prot: usize) -> isize{
+        if start % PAGE_SIZE != 0 { return -1; }        // start 需要映射的虚存起始地址，要求按页对齐
+        if len == 0 { return 0; }       // len 映射字节长度，可以为 0
+        if prot & !0x7 != 0 { return -1; }      // prot 其余位必须为0
+        if prot & 0x7 == 0 { return -1; }       // 这样的内存无意义
+        let mut inner = self.inner_exclusive_access();
+        let mut perm = MapPermission::U;    // 创建权限
+        if prot & 0x1 == 0x1 { perm |= MapPermission::R};
+        if prot & 0x2 == 0x2 { perm |= MapPermission::W};
+        if prot & 0x4 == 0x4 { perm |= MapPermission::X};
+        let page_cnt = if len % PAGE_SIZE == 0 {
+            len / PAGE_SIZE
+        }
+        else {
+            len / PAGE_SIZE + 1
+        };
+        let start_va = VirtAddr::from(start);      // 获得虚拟地址与虚拟页号
+        let start_vpn = VirtPageNum::from(start_va);
+        let end_vpn = VirtPageNum::from(start_vpn.0 + page_cnt);
+        let end_va = VirtAddr::from(end_vpn);
+        for vpn in (start_vpn.0..end_vpn.0).map(VirtPageNum) {
+            if let Some(pte) = inner.memory_set.translate(vpn) {      // 找到虚页号vpn对应的页表项pte
+                if pte.is_valid() { return -1; }        // 
+            }
+        }
+        inner.memory_set.insert_framed_area(start_va, end_va, perm);
+        0
     }
 }
 

@@ -144,6 +144,7 @@ pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
         "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
+    current_task().unwrap().mmap(_start, _len, _port);
     -1
 }
 
