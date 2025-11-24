@@ -263,7 +263,7 @@ impl TaskControlBlock {
 
     /// 进行内存映射
     pub fn mmap(&self, start: usize, len: usize, prot: usize) -> isize{
-        if start % PAGE_SIZE != 0 { return -1; }        // start 需要映射的虚存起始地址，要求按页对齐
+        if (start % PAGE_SIZE) != 0 { return -1; }        // start 需要映射的虚存起始地址，要求按页对齐
         if len == 0 { return 0; }       // len 映射字节长度，可以为 0
         if (prot & !0x7) != 0 { return -1; }      // prot 其余位必须为0
         if (prot & 0x7) == 0 { return -1; }       // 这样的内存无意义
