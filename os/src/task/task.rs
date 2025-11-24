@@ -1,7 +1,7 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::{PAGE_SIZE, TRAP_CONTEXT_BASE};
+use crate::config::{BIG_STRIDE, PAGE_SIZE, TRAP_CONTEXT_BASE};
 use crate::mm::{KERNEL_SPACE, MapPermission, MemorySet, PhysPageNum, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
@@ -137,7 +137,7 @@ impl TaskControlBlock {
                     heap_bottom: user_sp,
                     program_brk: user_sp,
                     stride: 0,
-                    pass: 0,
+                    pass: BIG_STRIDE / 16,
                     priority: 16
                 })
             },
@@ -264,7 +264,7 @@ impl TaskControlBlock {
     /// 进行内存映射
     pub fn mmap(&self, start: usize, len: usize, prot: usize) -> isize{
         if (start % PAGE_SIZE) != 0 { return -1; }        // start 需要映射的虚存起始地址，要求按页对齐
-        if len == 0 { return 0; }       // len 映射字节长度，可以为 0
+        if len == 0 { return -1; }       // len 映射字节长度，可以为 0
         if (prot & !0x7) != 0 { return -1; }      // prot 其余位必须为0
         if (prot & 0x7) == 0 { return -1; }       // 这样的内存无意义
         let mut inner = self.inner_exclusive_access();
@@ -279,7 +279,7 @@ impl TaskControlBlock {
             len / PAGE_SIZE + 1
         };
         let start_va = VirtAddr::from(start);      // 获得虚拟地址与虚拟页号
-        let start_vpn = VirtPageNum::from(start_va);
+        let start_vpn = start_va.floor();
         let end_vpn = VirtPageNum::from(start_vpn.0 + page_cnt);
         let end_va = VirtAddr::from(end_vpn);
         for vpn in (start_vpn.0..end_vpn.0).map(VirtPageNum) {
@@ -306,7 +306,7 @@ impl TaskControlBlock {
             len / PAGE_SIZE + 1
         };
         let start_va = VirtAddr::from(start);      // 获得虚拟地址与虚拟页号
-        let start_vpn = VirtPageNum::from(start_va);
+        let start_vpn = start_va.floor();
         let end_vpn = VirtPageNum::from(start_vpn.0 + page_cnt);
         // let end_va = VirtAddr::from(end_vpn);
         for vpn in (start_vpn.0..end_vpn.0).map(VirtPageNum) {
@@ -324,6 +324,7 @@ impl TaskControlBlock {
         let mut inner = self.inner_exclusive_access();
         inner.priority = prio as usize;
         inner.pass = big_stride / (prio as usize);
+        println!("set_prio PID {} prio {} pass {}", self.getpid(), inner.priority, inner.pass);
         prio
     }
 
@@ -336,7 +337,9 @@ impl TaskControlBlock {
     /// 修改stride
     pub fn update_stride(&self) {
         let mut inner = self.inner_exclusive_access();
+        // println!("update before PID {} stride {} pass {}", self.getpid(), inner.stride, inner.pass);
         inner.stride += inner.pass;
+        // println!("update after PID {} stride {} pass {}", self.getpid(), inner.stride, inner.pass);
     }
 }
 

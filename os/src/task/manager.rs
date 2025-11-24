@@ -39,6 +39,7 @@ impl TaskManager {
         min_index.map(|index| {
             let result_tcb = self.ready_queue.remove(index).unwrap();
             result_tcb.update_stride();
+            // println!("fetch PID {} stride {}",result_tcb.getpid(), result_tcb.get_stride());
             result_tcb
         })
         // self.ready_queue.pop_front()
