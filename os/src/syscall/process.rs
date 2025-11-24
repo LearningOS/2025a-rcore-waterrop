@@ -5,8 +5,7 @@ use crate::{
     loader::get_app_data_by_name,
     mm::{translated_byte_buffer, translated_refmut, translated_str},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
+        TaskControlBlock, add_task, current_task, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, get_big_stride
     }, timer::get_time_us,
 };
 
@@ -154,6 +153,7 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
         "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
+    current_task().unwrap().munmap(_start, _len);
     -1
 }
 
@@ -171,17 +171,44 @@ pub fn sys_sbrk(size: i32) -> isize {
 /// HINT: fork + exec =/= spawn
 pub fn sys_spawn(_path: *const u8) -> isize {
     trace!(
-        "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_spawn",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let path = translated_str(token, _path);
+    if let Some(data) = get_app_data_by_name(path.as_str()) {
+        let task = Arc::new(TaskControlBlock::new(data));
+        let child_pid = task.pid.0 as isize;
+        // 使用代码块限制借用作用域
+        {
+            // 获取子进程的PCB
+            let mut child_inner = task.inner_exclusive_access();
+            // 获取父进程的PCB
+            let parent = current_task().unwrap();
+            let mut parent_inner = parent.inner_exclusive_access();
+            // 添加父亲
+            child_inner.parent = Some(Arc::downgrade(&parent));
+            // 添加孩子
+            parent_inner.children.push(task.clone());
+        }
+        add_task(task);
+        child_pid
+    }
+    else {
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
+// syscall ID：140
+// 设置当前进程优先级为 prio
+// 参数：prio 进程优先级，要求 prio >= 2
+// 返回值：如果输入合法则返回 prio，否则返回 -1
 pub fn sys_set_priority(_prio: isize) -> isize {
     trace!(
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let big_stride = get_big_stride();      // 获取big_stride
+    current_task().unwrap().set_priority(big_stride, _prio)
 }
