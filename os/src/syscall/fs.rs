@@ -85,11 +85,19 @@ pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
 }
 
 /// YOUR JOB: Implement linkat.
+/// 
 pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_linkat NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
+    // 通过指针获取实际的name
+    // 检查根目录下有没有与new_name相同的目录项
+
+    // 创建目录项new_name
+    // 获取old_name目录项的Inode
+    // 将new_name指向old_name目录项的Inode
+
     -1
 }
 
