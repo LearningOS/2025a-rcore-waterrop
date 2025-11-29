@@ -52,10 +52,12 @@ const SYSCALL_SPAWN: usize = 400;
 mod fs;
 mod process;
 
+use core::mem::size_of;
+
 use fs::*;
 use process::*;
 
-use crate::fs::Stat;
+use crate::{fs::Stat, mm::translated_byte_buffer, task::current_user_token};
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
@@ -81,4 +83,33 @@ pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
         SYSCALL_SET_PRIORITY => sys_set_priority(args[0] as isize),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
+}
+
+/// 向用户空间的指定位置写入T类型的数据
+pub fn write_t_data_to_user_space<T>(address: *const u8, data: T) -> isize {
+    let type_len = size_of::<T>();
+    // 使用translated_byte_buffer将用户地址空间的地址转为内核可用缓冲区
+    let mut bufs = translated_byte_buffer(
+        current_user_token(),
+        address,
+        type_len,
+    );
+    // 将要写入的数据转为字节数组
+    let src_bytes = unsafe {
+        core::slice::from_raw_parts(
+            &data as *const T as *const u8,
+            type_len,
+        )
+    };
+    // 复制数据
+    let mut offset = 0;
+    for buf in &mut bufs{
+        let copy_len = buf.len().min(src_bytes.len() - offset);
+        buf[..copy_len].copy_from_slice(&src_bytes[offset..offset + copy_len]);
+        offset += copy_len;
+        if offset >= src_bytes.len() {
+            break;
+        }
+    }
+    if offset == type_len { 0 } else { -1 }
 }

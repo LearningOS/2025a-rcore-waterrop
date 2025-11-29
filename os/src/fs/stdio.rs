@@ -39,6 +39,18 @@ impl File for Stdin {
     fn write(&self, _user_buf: UserBuffer) -> usize {
         panic!("Cannot write to stdin!");
     }
+    /// 获取indoe的编号
+    fn get_ino(&self) -> u64 {
+        0
+    }
+    /// 获取inode文件类型
+    fn get_mode(&self) -> isize {
+        0
+    }
+    /// 获取硬链接数量
+    fn get_nlink(&self) -> u32 {
+        0
+    }
 }
 
 impl File for Stdout {
@@ -56,5 +68,17 @@ impl File for Stdout {
             print!("{}", core::str::from_utf8(*buffer).unwrap());
         }
         user_buf.len()
+    }
+    /// 获取indoe的编号
+    fn get_ino(&self) -> u64 {
+        0
+    }
+    /// 获取inode文件类型
+    fn get_mode(&self) -> isize {
+        0
+    }
+    /// 获取硬链接数量
+    fn get_nlink(&self) -> u32 {
+        0
     }
 }

@@ -71,12 +71,13 @@ impl EasyFileSystem {
         );
         // write back immediately
         // create a inode for root node "/"
-        assert_eq!(efs.alloc_inode(), 0);
+        let new_inode_id = efs.alloc_inode();
+        assert_eq!(new_inode_id, 0);
         let (root_inode_block_id, root_inode_offset) = efs.get_disk_inode_pos(0);
         get_block_cache(root_inode_block_id as usize, Arc::clone(&block_device))
             .lock()
             .modify(root_inode_offset, |disk_inode: &mut DiskInode| {
-                disk_inode.initialize(DiskInodeType::Directory);
+                disk_inode.initialize(new_inode_id, DiskInodeType::Directory);
             });
         block_cache_sync_all();
         Arc::new(Mutex::new(efs))

@@ -5,7 +5,7 @@
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
 use super::File;
-use crate::drivers::BLOCK_DEVICE;
+use crate::{drivers::BLOCK_DEVICE};
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
 use alloc::sync::Arc;
@@ -53,6 +53,7 @@ impl OSInode {
         }
         v
     }
+    
 }
 
 lazy_static! {
@@ -125,6 +126,16 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     }
 }
 
+/// linkat
+pub fn linkat_file(old_name: &str, new_name: &str) -> isize {
+    ROOT_INODE.linkat(old_name, new_name)
+}
+
+/// unlinkat
+pub fn unlinkat_file(name: &str) -> isize {
+    ROOT_INODE.unlinkat(name)
+}
+
 impl File for OSInode {
     fn readable(&self) -> bool {
         self.readable
@@ -155,5 +166,21 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+    /// 获取indoe的编号
+    fn get_ino(&self) -> u64 {
+        let inner = self.inner.exclusive_access();
+        inner.inode.get_id() as u64
+    }
+    /// 获取inode文件类型
+    fn get_mode(&self) -> isize {
+        let inner = self.inner.exclusive_access();
+        // if inner.inode.get_mode() == 1 { StatMode::DIR } else { StatMode::FILE }
+        inner.inode.get_mode()
+    }
+    /// 获取硬链接数量
+    fn get_nlink(&self) -> u32 {
+        let inner = self.inner.exclusive_access();
+        inner.inode.get_nlink()
     }
 }

@@ -1,3 +1,5 @@
+
+
 use super::{
     block_cache_sync_all, get_block_cache, BlockDevice, DirEntry, DiskInode, DiskInodeType,
     EasyFileSystem, DIRENT_SZ,
@@ -110,7 +112,7 @@ impl Inode {
         get_block_cache(new_inode_block_id as usize, Arc::clone(&self.block_device))
             .lock()
             .modify(new_inode_block_offset, |new_inode: &mut DiskInode| {
-                new_inode.initialize(DiskInodeType::File);
+                new_inode.initialize(new_inode_id, DiskInodeType::File);
             });
         self.modify_disk_inode(|root_inode| {
             // append file in the dirent
@@ -182,5 +184,103 @@ impl Inode {
             }
         });
         block_cache_sync_all();
+    }
+    /// 建立硬连接
+    /// 只有根目录的inode会调用
+    pub fn linkat(&self, old_name: &str, new_name: &str) -> isize {
+        let mut fs = self.fs.lock();
+        // 获取old_name的disk_inode的id
+        let new_inode_id = self.read_disk_inode(|root_inode| {
+            self.find_inode_id(old_name, root_inode).unwrap()
+        });
+        // 创建目录项新的
+        self.modify_disk_inode(|root_inode| {
+            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            let new_size = (file_count + 1) * DIRENT_SZ;
+            self.increase_size(new_size as u32, root_inode, &mut fs);
+            let dirent = DirEntry::new(new_name, new_inode_id);
+            root_inode.write_at(
+                file_count * DIRENT_SZ,
+                dirent.as_bytes(),
+                &self.block_device,
+            );
+        });
+        // 共享的disk_inode的count++
+        self.find(old_name).unwrap().modify_disk_inode(|disk_inode| {
+            disk_inode.count = disk_inode.count + 1;
+        });
+        0
+    }
+    /// 取消硬链接
+    /// 只有根结点才会调用
+    pub fn unlinkat(&self, name: &str) -> isize {
+        // 查看根结点下是否有这个名字的文件
+        if !self.read_disk_inode(|root_inode| {
+            assert!(root_inode.is_dir(), "[unlinkat]root_node is not dir!");
+            self.find_inode_id(name, root_inode)
+        }).is_some() {
+            return -1;
+        }
+        // 对应磁盘索引节点count-1
+        // 并记录-1后count是否为0
+        let my_inode = &self.find(name).unwrap();
+        let flag = my_inode.modify_disk_inode(|disk_inode| {
+            disk_inode.count = disk_inode.count - 1;
+            disk_inode.count == 0
+        });
+        // 如果为0，删除disk_inode
+        if flag {
+            my_inode.clear();
+        }
+        // 删除目录项，将要删除的目录项后面的往前即可
+        // 找到要删除的目录项的位置
+        let name_vec = self.ls();
+        let delete_idx = match name_vec.iter().position(|file_name| file_name == name) {
+            Some(idx) => idx,
+            None => return -1,
+        };
+        self.modify_disk_inode(|root_inode| {
+            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            let delete_offset = delete_idx * DIRENT_SZ;
+            let start_offset = (delete_idx + 1) * DIRENT_SZ;
+            // 把要删除的目录项后面的目录项前移
+            for i in 0..file_count - delete_idx - 1 {
+                let mut dirent = DirEntry::empty();
+                assert_eq!(
+                    root_inode.read_at(
+                        start_offset + i * DIRENT_SZ,
+                        dirent.as_bytes_mut(),
+                        &self.block_device,
+                    ),
+                    DIRENT_SZ
+                );
+                root_inode.write_at(
+                    delete_offset + i * DIRENT_SZ,
+                    dirent.as_bytes(),
+                    &self.block_device,
+                );
+            }
+            // 缩减目录大小
+            root_inode.size = (root_inode.size as usize - DIRENT_SZ) as u32;
+        });
+        0
+    }
+    /// 获取文件类型
+    pub fn get_mode(&self) -> isize {
+        self.read_disk_inode(|disk_inode| {
+            if disk_inode.is_dir() { 1 } else { 0 }
+        })
+    }
+    /// 获取文件硬链接数量
+    pub fn get_nlink(&self) -> u32 {
+        self.read_disk_inode(|disk_inode| {
+            disk_inode.count
+        })
+    }
+    /// 获取id
+    pub fn get_id(&self) -> u32 {
+        self.read_disk_inode(|disk_inode| {
+            disk_inode.id
+        })
     }
 }

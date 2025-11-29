@@ -1,14 +1,11 @@
 //! Process management syscalls
 //!
 use alloc::sync::Arc;
-
 use crate::{
-    fs::{open_file, OpenFlags},
-    mm::{translated_refmut, translated_str},
-    task::{
+    fs::{OpenFlags, open_file}, mm::{translated_refmut, translated_str}, syscall::write_t_data_to_user_space, task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
-    },
+    }, timer::get_time_us
 };
 
 #[repr(C)]
@@ -107,10 +104,15 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_get_time",
         current_task().unwrap().pid.0
     );
-    -1
+    let total_us = get_time_us();
+    let time_val = TimeVal {
+        sec: (total_us / 1_000_000) as usize,
+        usec: (total_us % 1_000_000) as usize,
+    };
+    write_t_data_to_user_space::<TimeVal>(_ts as *const u8, time_val)
 }
 
 /// YOUR JOB: Implement mmap.

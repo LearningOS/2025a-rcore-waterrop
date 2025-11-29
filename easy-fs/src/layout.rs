@@ -85,17 +85,21 @@ pub struct DiskInode {
     pub direct: [u32; INODE_DIRECT_COUNT],
     pub indirect1: u32,
     pub indirect2: u32,
+    pub count: u32,
+    pub id: u32,
     type_: DiskInodeType,
 }
 
 impl DiskInode {
     /// Initialize a disk inode, as well as all direct inodes under it
     /// indirect1 and indirect2 block are allocated only when they are needed
-    pub fn initialize(&mut self, type_: DiskInodeType) {
+    pub fn initialize(&mut self, id: u32, type_: DiskInodeType) {
         self.size = 0;
         self.direct.iter_mut().for_each(|v| *v = 0);
         self.indirect1 = 0;
         self.indirect2 = 0;
+        self.count = 1;
+        self.id = id;
         self.type_ = type_;
     }
     /// Whether this inode is a directory
