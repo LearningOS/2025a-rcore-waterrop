@@ -189,10 +189,18 @@ impl Inode {
     /// 只有根目录的inode会调用
     pub fn linkat(&self, old_name: &str, new_name: &str) -> isize {
         let mut fs = self.fs.lock();
+        // 判断旧文件是否存在，若不存在，返回-1
+        if !self.read_disk_inode(|root_inode| {
+            assert!(root_inode.is_dir(), "[unlinkat]root_node is not dir!");
+            self.find_inode_id(old_name, root_inode)
+        }).is_some() {
+            return -1;
+        }
         // 获取old_name的disk_inode的id
         let new_inode_id = self.read_disk_inode(|root_inode| {
             self.find_inode_id(old_name, root_inode).unwrap()
         });
+        // assert!(new_inode_id == 0, "{}", new_inode_id);
         // 创建目录项新的
         self.modify_disk_inode(|root_inode| {
             let file_count = (root_inode.size as usize) / DIRENT_SZ;
@@ -205,9 +213,11 @@ impl Inode {
                 &self.block_device,
             );
         });
+        drop(fs);
+        // assert!(false, "error");
         // 共享的disk_inode的count++
         self.find(old_name).unwrap().modify_disk_inode(|disk_inode| {
-            disk_inode.count = disk_inode.count + 1;
+            disk_inode.count += 1;
         });
         0
     }
