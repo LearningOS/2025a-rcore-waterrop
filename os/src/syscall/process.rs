@@ -3,8 +3,7 @@
 use alloc::sync::Arc;
 use crate::{
     fs::{OpenFlags, open_file}, mm::{translated_refmut, translated_str}, syscall::write_t_data_to_user_space, task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
+        TaskControlBlock, add_task, current_task, current_user_token, exit_current_and_run_next, get_big_stride, suspend_current_and_run_next
     }, timer::get_time_us
 };
 
@@ -118,19 +117,19 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 /// YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_mmap",
         current_task().unwrap().pid.0
     );
-    -1
+    current_task().unwrap().mmap(_start, _len, _port)
 }
 
 /// YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_munmap",
         current_task().unwrap().pid.0
     );
-    -1
+    current_task().unwrap().munmap(_start, _len)
 }
 
 /// change data segment size
@@ -147,17 +146,46 @@ pub fn sys_sbrk(size: i32) -> isize {
 /// HINT: fork + exec =/= spawn
 pub fn sys_spawn(_path: *const u8) -> isize {
     trace!(
-        "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_spawn",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let path = translated_str(token, _path);
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+        let task = Arc::new(TaskControlBlock::new(all_data.as_slice()));
+        let child_pid = task.pid.0 as isize;
+        // 使用代码块限制借用作用域
+        {
+            // 获取子进程的PCB
+            let mut child_inner = task.inner_exclusive_access();
+            // 获取父进程的PCB
+            let parent = current_task().unwrap();
+            let mut parent_inner = parent.inner_exclusive_access();
+            // 添加父亲
+            child_inner.parent = Some(Arc::downgrade(&parent));
+            // 添加孩子
+            parent_inner.children.push(task.clone());
+        }
+        add_task(task);
+        child_pid
+    }
+    else {
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
+// syscall ID：140
+// 设置当前进程优先级为 prio
+// 参数：prio 进程优先级，要求 prio >= 2
+// 返回值：如果输入合法则返回 prio，否则返回 -1
 pub fn sys_set_priority(_prio: isize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_set_priority",
         current_task().unwrap().pid.0
     );
-    -1
+    println!("prio {}", _prio);
+    let big_stride = get_big_stride();      // 获取big_stride
+    current_task().unwrap().set_priority(big_stride, _prio)
 }

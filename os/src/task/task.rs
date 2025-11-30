@@ -1,9 +1,9 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{TRAP_CONTEXT_BASE, BIG_STRIDE, PAGE_SIZE};
 use crate::fs::{File, Stdin, Stdout};
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::mm::{KERNEL_SPACE, MapPermission, MemorySet, PhysPageNum, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
@@ -71,6 +71,15 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+        /// stride
+    pub stride: usize,
+
+    /// pass
+    pub pass: usize,
+
+    /// priority
+    pub priority: usize,
 }
 
 impl TaskControlBlockInner {
@@ -135,6 +144,9 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    stride: 0,
+                    pass: BIG_STRIDE / 16,
+                    priority: 16
                 })
             },
         };
@@ -216,6 +228,9 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    stride: parent_inner.stride,
+                    pass: parent_inner.pass,
+                    priority: parent_inner.priority
                 })
             },
         });
@@ -260,6 +275,82 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+    /// 进行内存映射
+    pub fn mmap(&self, start: usize, len: usize, prot: usize) -> isize{
+        if (start % PAGE_SIZE) != 0 { return -1; }        // start 需要映射的虚存起始地址，要求按页对齐
+        if len == 0 { return -1; }       // len 映射字节长度，可以为 0
+        if (prot & !0x7) != 0 { return -1; }      // prot 其余位必须为0
+        if (prot & 0x7) == 0 { return -1; }       // 这样的内存无意义
+        let mut inner = self.inner_exclusive_access();
+        let mut perm = MapPermission::U;    // 创建权限
+        if prot & 0x1 == 0x1 { perm |= MapPermission::R};
+        if prot & 0x2 == 0x2 { perm |= MapPermission::W};
+        if prot & 0x4 == 0x4 { perm |= MapPermission::X};
+        let page_cnt = if len % PAGE_SIZE == 0 {
+            len / PAGE_SIZE
+        }
+        else {
+            len / PAGE_SIZE + 1
+        };
+        let start_va = VirtAddr::from(start);      // 获得虚拟地址与虚拟页号
+        let start_vpn = start_va.floor();
+        let end_vpn = VirtPageNum::from(start_vpn.0 + page_cnt);
+        let end_va = VirtAddr::from(end_vpn);
+        for vpn in (start_vpn.0..end_vpn.0).map(VirtPageNum) {
+            if let Some(pte) = inner.memory_set.translate(vpn) {      // 找到虚页号vpn对应的页表项pte
+                if pte.is_valid() {
+                    println!("{}已经映射了！", vpn.0); 
+                    return -1; 
+                }        // 
+            }
+        }
+        inner.memory_set.insert_framed_area(start_va, end_va, perm);
+        0
+    }
+    /// 取消内存映射
+    pub fn munmap(&self, start: usize, len: usize) -> isize {
+        if start % PAGE_SIZE != 0 { return -1; }        // start 需要映射的虚存起始地址，要求按页对齐
+        if len == 0 { return 0; }       // len 映射字节长度，可以为 0
+        let mut inner = self.inner_exclusive_access();
+        let page_cnt = if len % PAGE_SIZE == 0 {
+            len / PAGE_SIZE
+        }
+        else {
+            len / PAGE_SIZE + 1
+        };
+        let start_va = VirtAddr::from(start);      // 获得虚拟地址与虚拟页号
+        let start_vpn = start_va.floor();
+        let end_vpn = VirtPageNum::from(start_vpn.0 + page_cnt);
+        // let end_va = VirtAddr::from(end_vpn);
+        for vpn in (start_vpn.0..end_vpn.0).map(VirtPageNum) {
+            if let Some(pte) = inner.memory_set.translate(vpn) {      // 找到虚页号vpn对应的页表项pte
+                if !pte.is_valid() { return -1; }        // 
+            }
+        }
+        inner.memory_set.remove_area_with_start_vpn(start_vpn);
+        0
+    }
+    /// 设置优先级
+    pub fn set_priority(&self, big_stride: usize, prio: isize) -> isize {
+        if prio < 2 { return -1; }
+        let mut inner = self.inner_exclusive_access();
+        inner.priority = prio as usize;
+        inner.pass = big_stride / (prio as usize);
+        println!("set_prio PID {} prio {} pass {}", self.getpid(), inner.priority, inner.pass);
+        prio
+    }
+    /// 获取stride
+    pub fn get_stride(&self) -> usize {
+        let inner = self.inner_exclusive_access();
+        inner.stride
+    }
+    /// 修改stride
+    pub fn update_stride(&self) {
+        let mut inner = self.inner_exclusive_access();
+        // println!("update before PID {} stride {} pass {}", self.getpid(), inner.stride, inner.pass);
+        inner.stride += inner.pass;
+        // println!("update after PID {} stride {} pass {}", self.getpid(), inner.stride, inner.pass);
     }
 }
 

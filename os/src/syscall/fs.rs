@@ -79,7 +79,7 @@ pub fn sys_close(fd: usize) -> isize {
 /// YOUR JOB: Implement fstat.
 pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
     trace!(
-        "kernel:pid[{}] sys_fstat NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_fstat",
         current_task().unwrap().pid.0
     );
     let task = current_task().unwrap();
@@ -89,6 +89,7 @@ pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
     }
     if let Some(file) = &inner.fd_table[_fd] {
         let file = file.clone();
+        drop(inner);
         let file_stat = Stat {
             dev: 0,
             ino: file.get_ino(),
@@ -113,7 +114,7 @@ pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
     let user_token = current_user_token();
     let old_name = translated_str(user_token, _old_name);
     let new_name = translated_str(user_token, _new_name);
-    println!("old_name: {}  new_name: {}", old_name, new_name);
+    println!("[kernel:sys_linkat]old_name: {}  new_name: {}", old_name, new_name);
     // 不考虑新文件路径已经存在的情况（属于未定义行为）。除非出现新旧名字一致的情况，此时需要返回-1。
     if old_name == new_name { return -1; }
     // 创建目录项new_name
