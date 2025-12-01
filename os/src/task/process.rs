@@ -60,8 +60,6 @@ pub struct ProcessControlBlockInner {
     pub sem_available: Vec<isize>,
     /// sem Allocation
     pub sem_allocation: Vec<Vec<isize>>,
-    /// sem Request
-    pub sem_request: Vec<Vec<isize>>,
     /// sem Need
     pub sem_need: Vec<Vec<isize>>,
 
@@ -142,7 +140,6 @@ impl ProcessControlBlock {
                     mutex_need: Vec::new(),
                     sem_available: Vec::new(),
                     sem_allocation: Vec::new(),
-                    sem_request: Vec::new(),
                     sem_need: Vec::new(),
                     flag: false,
                 })
@@ -276,7 +273,6 @@ impl ProcessControlBlock {
                     mutex_need: Vec::new(),
                     sem_available: Vec::new(),
                     sem_allocation: Vec::new(),
-                    sem_request: Vec::new(),
                     sem_need: Vec::new(),
                     flag: false,
                 })
@@ -352,6 +348,17 @@ impl ProcessControlBlock {
             resource[mutex_id] -= 1;
         }
     }
+    pub fn update_sem_available(&self, mutex_id: usize, op: usize) {
+        // 根据索引找到对应的request的资源列表
+        let mut inner = self.inner_exclusive_access();
+        let resource = &mut inner.sem_available;
+        if op == 0 {
+            resource[mutex_id] += 1;
+        }
+        else {
+            resource[mutex_id] -= 1;
+        }
+    }
     /// 更新mutex_request
     pub fn update_mutex_need(&self, tid: usize, mutex_id: usize, op: usize) {
         // 首先根据tid找到线程在PCB的tasks里的索引
@@ -367,6 +374,20 @@ impl ProcessControlBlock {
             *res -= 1;
         }
     }
+    pub fn update_sem_need(&self, tid: usize, mutex_id: usize, op: usize) {
+        // 首先根据tid找到线程在PCB的tasks里的索引
+        let idx = self.find_task_idx_by_tid(tid).unwrap();
+        // 根据索引找到对应的request的资源列表
+        let mut inner = self.inner_exclusive_access();
+        let resource = inner.sem_need.get_mut(idx).unwrap();
+        let res = resource.get_mut(mutex_id).unwrap();
+        if op == 0 {
+            *res += 1;
+        }
+        else {
+            *res -= 1;
+        }
+    }
     /// 更新mutex_allocation
         pub fn update_mutex_allocation(&self, tid: usize, mutex_id: usize, op: usize) {
         // 首先根据tid找到线程在PCB的tasks里的索引
@@ -374,6 +395,21 @@ impl ProcessControlBlock {
         // 根据索引找到对应的allocation的资源列表
         let mut inner = self.inner_exclusive_access();
         let resource = inner.mutex_allocation.get_mut(idx).unwrap();
+        let res = resource.get_mut(mutex_id).unwrap();
+        if op == 0 {
+            *res += 1;
+        }
+        else {
+            *res -= 1;
+        }
+    }
+    /// 更新sem_allocation
+    pub fn update_sem_allocation(&self, tid: usize, mutex_id: usize, op: usize) {
+        // 首先根据tid找到线程在PCB的tasks里的索引
+        let idx = self.find_task_idx_by_tid(tid).unwrap();
+        // 根据索引找到对应的allocation的资源列表
+        let mut inner = self.inner_exclusive_access();
+        let resource = inner.sem_allocation.get_mut(idx).unwrap();
         let res = resource.get_mut(mutex_id).unwrap();
         if op == 0 {
             *res += 1;
@@ -413,6 +449,13 @@ impl ProcessControlBlock {
         let available = inner.mutex_available.clone();
         let allocation = inner.mutex_allocation.clone();
         let need = inner.mutex_need.clone();
+        self.is_safe(available, allocation, need)
+    }
+    pub fn sem_is_safe(&self) -> bool {
+        let inner = self.inner_exclusive_access();
+        let available = inner.sem_available.clone();
+        let allocation = inner.sem_allocation.clone();
+        let need = inner.sem_need.clone();
         self.is_safe(available, allocation, need)
     }
     /// 银行家算法，死锁检测
