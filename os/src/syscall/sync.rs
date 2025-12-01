@@ -49,9 +49,23 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         .map(|(id, _)| id)
     {
         process_inner.mutex_list[id] = mutex;
+        process_inner.mutex_available[id] = 1 as isize;
+        for inner in process_inner.mutex_allocation.iter_mut() {
+            inner[id] = 0;
+        }
+        for inner in process_inner.mutex_need.iter_mut() {
+            inner[id] = 0;
+        }
         id as isize
     } else {
         process_inner.mutex_list.push(mutex);
+        process_inner.mutex_available.push(1 as isize);
+        for inner in process_inner.mutex_allocation.iter_mut() {
+            inner.push(0);
+        }
+        for inner in process_inner.mutex_need.iter_mut() {
+            inner.push(0);
+        }
         process_inner.mutex_list.len() as isize - 1
     }
 }
@@ -71,10 +85,34 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
+    let ena = process_inner.flag;
+
     drop(process_inner);
     drop(process);
-    mutex.lock();
-    0
+    
+    // 只要进来获取锁了，说明该线程需要mutex_id这个资源，则request矩阵对应的资源加1，并更新need
+    let task = current_task().unwrap();
+    let task_inner = task.inner_exclusive_access();
+    let tid = task_inner.res.as_ref().unwrap().tid;
+    drop(task_inner);
+    drop(task);
+    // 线程tid请求mutex_id的资源
+    current_process().update_mutex_need(tid, mutex_id, 0);
+    let mut flag = true;
+    if ena {
+        flag = current_process().mutex_is_safe();
+    }
+    if flag {
+        // 线程tid获得了mutex_id的资源
+        current_process().update_mutex_allocation(tid, mutex_id, 0);
+        // 线程tid已经获得了mutex_id的资源，对应的请求减少
+        current_process().update_mutex_need(tid, mutex_id, 1);
+        // 分配后，可用资源减少
+        current_process().update_mutex_available(mutex_id, 1);
+        mutex.lock();
+        0
+    }
+    else { -0xDEAD }
 }
 /// mutex unlock syscall
 pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
@@ -94,6 +132,13 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
     drop(process);
+    let task = current_task().unwrap();
+    let task_inner = task.inner_exclusive_access();
+    let tid = task_inner.res.as_ref().unwrap().tid;
+    drop(task_inner);
+    drop(task);
+    current_process().update_mutex_available(mutex_id, 0);
+    current_process().update_mutex_allocation(tid, mutex_id, 1);
     mutex.unlock();
     0
 }
@@ -120,11 +165,13 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
         .map(|(id, _)| id)
     {
         process_inner.semaphore_list[id] = Some(Arc::new(Semaphore::new(res_count)));
+        process_inner.sem_available[id] = res_count as isize;
         id
     } else {
         process_inner
             .semaphore_list
             .push(Some(Arc::new(Semaphore::new(res_count))));
+        process_inner.sem_available.push(res_count as isize);
         process_inner.semaphore_list.len() - 1
     };
     id as isize
@@ -246,6 +293,7 @@ pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
 ///
 /// YOUR JOB: Implement deadlock detection, but might not all in this syscall
 pub fn sys_enable_deadlock_detect(_enabled: usize) -> isize {
-    trace!("kernel: sys_enable_deadlock_detect NOT IMPLEMENTED");
-    -1
+    trace!("kernel: sys_enable_deadlock_detect");
+    current_process().update_flag(_enabled == 1);
+    0
 }

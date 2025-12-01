@@ -4,13 +4,13 @@
 
 use core::arch::asm;
 /// set timer sbi call id
-const SBI_SET_TIMER: usize = 0;
+const SBI_SET_TIMER: usize = 0x54494D45;
 /// console putchar sbi call id
 const SBI_CONSOLE_PUTCHAR: usize = 1;
 /// console getchar sbi call id
 const SBI_CONSOLE_GETCHAR: usize = 2;
 /// shutdown sbi call id
-const SBI_SHUTDOWN: usize = 8;
+const SBI_SHUTDOWN: usize = 0x53525354;
 
 /// general sbi call
 #[inline(always)]

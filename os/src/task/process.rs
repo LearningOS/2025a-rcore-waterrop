@@ -49,6 +49,24 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// mutex Available
+    pub mutex_available: Vec<isize>,
+    /// mutex Allocation
+    pub mutex_allocation: Vec<Vec<isize>>,
+    /// mutex Need
+    pub mutex_need: Vec<Vec<isize>>,
+
+    /// sem Available
+    pub sem_available: Vec<isize>,
+    /// sem Allocation
+    pub sem_allocation: Vec<Vec<isize>>,
+    /// sem Request
+    pub sem_request: Vec<Vec<isize>>,
+    /// sem Need
+    pub sem_need: Vec<Vec<isize>>,
+
+    /// 是否进行死锁检测
+    pub flag: bool,
 }
 
 impl ProcessControlBlockInner {
@@ -119,6 +137,14 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    mutex_available: Vec::new(),
+                    mutex_allocation: Vec::new(),
+                    mutex_need: Vec::new(),
+                    sem_available: Vec::new(),
+                    sem_allocation: Vec::new(),
+                    sem_request: Vec::new(),
+                    sem_need: Vec::new(),
+                    flag: false,
                 })
             },
         });
@@ -245,6 +271,14 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    mutex_available: Vec::new(),
+                    mutex_allocation: Vec::new(),
+                    mutex_need: Vec::new(),
+                    sem_available: Vec::new(),
+                    sem_allocation: Vec::new(),
+                    sem_request: Vec::new(),
+                    sem_need: Vec::new(),
+                    flag: false,
                 })
             },
         });
@@ -281,5 +315,166 @@ impl ProcessControlBlock {
     /// get pid
     pub fn getpid(&self) -> usize {
         self.pid.0
+    }
+    /// 根据tid找到线程在PCB的tasks里的索引
+    pub fn find_task_idx_by_tid(&self, tid:usize) -> Option<usize> {
+        let inner = self.inner_exclusive_access();
+        // 遍历task列表
+        for (idx, opt) in inner.tasks.iter().enumerate() {
+            // 跳过空闲位置
+            let tcb = match opt {
+                Some(x) => x,
+                None => continue,
+            };
+            // 访问tcb的内部数据
+            let tcb_inner = tcb.inner_exclusive_access();
+            let tcb_user_res = match &tcb_inner.res {
+                Some(x) => x,
+                None => continue,
+            };
+            // 判断tid是否相等，若相等则返回idx
+            if tcb_user_res.tid == tid {
+                return Some(idx);
+            }
+        }
+        // 若遍历完tasks还未找到，则返回None
+        None
+    }
+    /// 更新mutex_avail
+    pub fn update_mutex_available(&self, mutex_id: usize, op: usize) {
+        // 根据索引找到对应的request的资源列表
+        let mut inner = self.inner_exclusive_access();
+        let resource = &mut inner.mutex_available;
+        if op == 0 {
+            resource[mutex_id] += 1;
+        }
+        else {
+            resource[mutex_id] -= 1;
+        }
+    }
+    /// 更新mutex_request
+    pub fn update_mutex_need(&self, tid: usize, mutex_id: usize, op: usize) {
+        // 首先根据tid找到线程在PCB的tasks里的索引
+        let idx = self.find_task_idx_by_tid(tid).unwrap();
+        // 根据索引找到对应的request的资源列表
+        let mut inner = self.inner_exclusive_access();
+        let resource = inner.mutex_need.get_mut(idx).unwrap();
+        let res = resource.get_mut(mutex_id).unwrap();
+        if op == 0 {
+            *res += 1;
+        }
+        else {
+            *res -= 1;
+        }
+    }
+    /// 更新mutex_allocation
+        pub fn update_mutex_allocation(&self, tid: usize, mutex_id: usize, op: usize) {
+        // 首先根据tid找到线程在PCB的tasks里的索引
+        let idx = self.find_task_idx_by_tid(tid).unwrap();
+        // 根据索引找到对应的allocation的资源列表
+        let mut inner = self.inner_exclusive_access();
+        let resource = inner.mutex_allocation.get_mut(idx).unwrap();
+        let res = resource.get_mut(mutex_id).unwrap();
+        if op == 0 {
+            *res += 1;
+        }
+        else {
+            *res -= 1;
+        }
+    }
+    /*
+    /// 更新need
+    /// 调用者确保资源个数一样
+    pub fn update_mutex_need(&self, tid: usize, mutex_id: usize) {
+        let idx = self.find_task_idx_by_tid(tid).unwrap();
+        let mut inner = self.inner_exclusive_access();
+        let allocation = inner.mutex_allocation.get(idx).unwrap().clone();
+        let request = inner.mutex_request.get(idx).unwrap().clone();
+        let need = inner.mutex_need.get_mut(idx).unwrap();
+        need[mutex_id] = request[mutex_id] - allocation[mutex_id];
+    }
+    */
+    /// 修改flag
+    pub fn update_flag(&self, is_enable: bool) {
+        let mut inner = self.inner_exclusive_access();
+        inner.flag = is_enable;
+    }
+    /// 为每个矩阵添加一行
+    pub fn update_matrix(&self) {
+        let mut inner = self.inner_exclusive_access();
+        inner.mutex_allocation.push(Vec::new());
+        inner.mutex_need.push(Vec::new());
+        inner.sem_allocation.push(Vec::new());
+        inner.sem_need.push(Vec::new());
+    }
+    /// 死锁检测接口
+    pub fn mutex_is_safe(&self) -> bool {
+        let inner = self.inner_exclusive_access();
+        let available = inner.mutex_available.clone();
+        let allocation = inner.mutex_allocation.clone();
+        let need = inner.mutex_need.clone();
+        self.is_safe(available, allocation, need)
+    }
+    /// 银行家算法，死锁检测
+    fn is_safe(
+        &self,
+        available: Vec<isize>,
+        allocation: Vec<Vec<isize>>,
+        need: Vec<Vec<isize>>
+    ) -> bool {
+        // 检查输入的合法性
+        let n_threads = allocation.len();
+        if need.len() != n_threads {
+            assert!(false, "分配矩阵和需求矩阵线程数不匹配：分配矩阵={}个线程，需求矩阵={}个线程", n_threads, need.len());
+            return false;
+        }
+        // 检查资源数量
+        let n_resources = available.len();
+        if n_resources == 0 {
+            assert!(false, "可利用资源向量为空（无资源类型定义）");
+            return false;
+        }
+        // 校验每个线程的分配/需求资源数与总资源类型数匹配
+        for (thread_id, alloc) in allocation.iter().enumerate() {
+            if alloc.len() != n_resources {
+                assert!(false, "线程{}的分配资源数不匹配：实际{}个，预期{}个", thread_id, alloc.len(), n_resources);
+                return false;
+            }
+        }
+        for (thread_id, nd) in need.iter().enumerate() {
+            if nd.len() != n_resources {
+                assert!(false, "线程{}的需求资源数不匹配：实际{}个，预期{}个", thread_id, nd.len(), n_resources);
+                return false;
+            }
+        }
+        // 初始化工作向量Work和结束向量Finish
+        let mut work = available.to_vec();
+        let mut finish = Vec::new();
+        for _i in 0..n_threads { finish.push(false); }
+        loop {
+            // 查找满足条件的线程：未完成 + 需求<=当前可用资源
+            let found_thread = finish
+                .iter()
+                .enumerate()
+                .find(|(thread_id, &is_finished)| {
+                    if is_finished { return false; }
+                    need[*thread_id]
+                        .iter()
+                        .zip(work.iter())
+                        .all(|(need, work_j)| need <= work_j)
+                });
+            match found_thread {
+                Some((thread_id, _)) => {
+                    for id in 0..n_resources {
+                        work[id] += allocation[thread_id][id];
+                    }
+                    finish[thread_id] = true;
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+        finish.iter().all(|&is_finished| is_finished)
     }
 }
